@@ -19,6 +19,7 @@ constexpr keyword fromKeyword = "from";
 constexpr keyword asKeyword = "as";
 constexpr keyword tableKeyword = "table";
 constexpr keyword createKeyword = "create";
+constexpr keyword whereKeyword = "where";
 constexpr keyword insertKeyword = "insert";
 constexpr keyword intoKeyword = "into";
 constexpr keyword valuesKeyword = "values";

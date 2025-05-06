@@ -1,8 +1,19 @@
+#include <iterator>
+#include <string>
 #include <tuple>
 #include <vector>
 #include "lexer.h"
 
 namespace nicolassql {
+
+
+namespace {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexString(const std::string& source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string source, cursor ic);
+}
 
 std::tuple<std::vector<token*>, std::string> lex(const std::string& source) {
 	std::vector<token*> tokens;
@@ -30,7 +41,8 @@ std::tuple<std::vector<token*>, std::string> lex(const std::string& source) {
 							std::to_string(cur.loc.line) + ":" + std::to_string(cur.loc.col);
 		return {tokens, err};
 	}
-
+	
+	return {tokens, nullptr};
 }
 
 namespace {
@@ -160,9 +172,205 @@ namespace {
 		return lexCharacterDelimited(source, ic, '\'');
 	}
 
+	// longestMatch iterates through a source string, starting at the given
+	// cursor, to find the longest matching substring among the provided
+	// options
+	std::string longestMatch(std::string source, cursor ic, std::vector<std::string_view>& options) {
+		std::vector<char> value;
+		std::vector<int> skipList;
+		std::string match;
+
+		cursor cur = ic;
+
+		while (cur.pointer < source.length()) {
+			value.push_back(std::tolower(source[cur.pointer]));
+			cur.pointer++;
+
+			for (int i = 0; i < options.size(); i++) {
+				bool isSkipped = false;
+				for (int skip : skipList) {
+					if (i == skip) {
+						isSkipped = true;
+						break;
+					}
+				}
+				if (isSkipped) {
+					continue;
+				}
+
+				// deal with cases like INT vs INTO
+				if (options[i] == std::string(value.begin(), value.end())) {
+					skipList.push_back(i);
+					if (options[i].length() > match.length()) {
+						match = options[i];
+					}
+
+					continue;
+				}
+
+				bool sharesPrefix = std::string(value.begin(), value.end()) == options[i].substr(0, cur.pointer - ic.pointer);  
+				bool tooLong = value.size() > options[i].length();
+				if (tooLong || !sharesPrefix) {
+					skipList.push_back(i);
+				}
+			}
+
+			if (skipList.size() == options.size()) {
+				break;
+			}
+		}
+
+		return match;
+	}
+
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string source, cursor ic) {
+		char c = source[ic.pointer];
+		cursor cur = ic;
+
+		// will get overwritten later, if not an ignored syntax
+		cur.pointer++;
+		cur.loc.col++;
+
+		switch (c) {
+		// syntax that should be thrown away
+		case '\n':
+			cur.loc.line++;
+			cur.loc.col = 0;
+		case '\t':
+		case ' ':
+			return {nullptr, cur, true};
+
+		}
+
+		// syntax that should be kept
+		std::vector<symbol> symbols = {
+			commaSymbol,
+			leftparenSymbol,
+			rightparenSymbol,
+			semicolonSymbol,
+			asteriskSymbol,
+		};
+
+		std::vector<std::string_view> options;
+		for (std::string_view s : symbols) {
+			options.push_back(s);
+		}
+
+		// use `ic` not `cur`
+		std::string match = longestMatch(source, ic, options);
+		// unknown character
+		if (match == "") {
+			return {nullptr, ic, false};
+		}
+
+		cur.pointer = ic.pointer + match.length();
+		cur.loc.col = ic.loc.col + match.length();
+
+		return std::make_tuple(
+			std::make_unique<token>(token{
+				.value = match,
+				.loc = ic.loc,
+				.kind = tokenKind::symbolKind,
+			}), 
+			cur, 
+			true			
+		);
+
+	}
+
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string source, cursor ic) {
+		cursor cur = ic;
+		std::vector<keyword> keywords = {
+			selectKeyword,
+			insertKeyword,
+			valuesKeyword,
+			tableKeyword,
+			createKeyword,
+			whereKeyword,
+			fromKeyword,
+			intoKeyword,
+			textKeyword,
+		};
+
+		std::vector<std::string_view> options;
+		for (std::string_view k : keywords) {
+			options.push_back(k);
+		}
+
+		std::string match = longestMatch(source, ic, options);
+		if (match == "") {
+			return {nullptr, ic, false};
+		}
+
+		cur.pointer = ic.pointer + match.length();
+		cur.loc.col = ic.loc.col + match.length();
+
+		return std::make_tuple(
+			std::make_unique<token>(token{
+				.value = match,
+				.loc = ic.loc,
+				.kind = tokenKind::symbolKind,
+			}), 
+			cur, 
+			true			
+		); 
+
+	}
+
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string source, cursor ic) {
+		// handle seperately if it is a double-quoted identifier
+		if (auto [tok, newCursor, ok] = lexCharacterDelimited(source, ic, '"'); ok) {
+			return {std::move(tok), newCursor, true};
+		}	
+
+		cursor cur = ic;
+
+		char c = source[cur.pointer];
+		// other characters count alos, ignoring non-ascii for now
+		bool isAlphabetical = (c >= 'A' && c <= 'Z' || (c >= 'a' && c <= 'z'));
+		if (!isAlphabetical) {
+			return {nullptr, ic, false};
+		}
+		cur.pointer++;
+		cur.loc.col++;
+
+		std::vector<char> value = {c};
+		for(; cur.pointer < source.length(); cur.pointer++) {
+			c = source[cur.pointer];
+
+			isAlphabetical = (c >= 'A' && c <= 'Z' || (c >= 'a' && c <= 'z'));
+			bool isNumeric = (c >= '0' && c <= '9');
+			if (isAlphabetical || isNumeric || c == '$' || c == '_') {
+				value.push_back(c);
+				cur.loc.col++;
+				continue;
+			}
+
+			break;
+		}
+
+		if (value.size() == 0) {
+			return {nullptr, ic, false};
+		}
+	
+		return std::make_tuple(
+			std::make_unique<token>(token{
+				.value = [] (const std::string& value) {
+				std::string lower(value.size(), '\0');
+				std::transform(value.begin(), value.end(), lower.begin(),
+						[](unsigned char c) { return std::tolower(c); });
+				return lower;
+				}(std::string(value.begin(), value.end())),
+				.loc = ic.loc,
+				.kind = tokenKind::identifierKind,
+			}), 
+			cur, 
+			true			
+		); 
+
+	}
 
 }
 
 }
-
 
