@@ -43,7 +43,7 @@ enum class tokenKind : unsigned int {
 };
 
 struct token {
-	std::string value;
+	std::string_view value;
 	tokenKind kind;
 	location loc;
 
@@ -57,6 +57,6 @@ struct cursor {
 	location loc;
 };
 
-using lexer = std::function<std::tuple<std::unique_ptr<token>, cursor, bool>(const std::string&, const cursor&)>;
+using lexer = std::function<std::tuple<std::unique_ptr<token>, cursor, bool>(std::string_view, const cursor&)>;
 
 }

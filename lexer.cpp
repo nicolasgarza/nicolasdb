@@ -8,19 +8,23 @@ namespace nicolassql {
 
 
 namespace {
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string source, cursor ic);
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string source, cursor ic);
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexString(const std::string& source, cursor ic);
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string source, cursor ic);
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string_view source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string_view source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexString(std::string_view source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string_view source, cursor ic);
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string_view source, cursor ic);
 }
 
-std::tuple<std::vector<token*>, std::string> lex(const std::string& source) {
+std::tuple<std::vector<token*>, std::string> lex(std::string_view source) {
 	std::vector<token*> tokens;
 	cursor cur{};
 
 	while (cur.pointer < source.length()) {
-		std::vector<lexer> lexers = {lexKeyword, lexSymbol, lexString, lexNumeric, lexIdentifier};
+		bool matched = false;
+		using LexerFn = std::tuple<std::unique_ptr<token>, cursor, bool>(*)(std::string_view, cursor);
+		static constexpr std::array<LexerFn, 5> lexers = {
+			&lexKeyword, &lexSymbol, &lexString, &lexNumeric, &lexIdentifier
+		};
 		for (lexer l : lexers) {
 			if (auto [token, newCursor, ok] = l(source, cur); ok) {
 				cur = newCursor;
@@ -28,13 +32,18 @@ std::tuple<std::vector<token*>, std::string> lex(const std::string& source) {
 					tokens.push_back(token.release());
 				}
 
-				continue;
+				matched = true;
+				break;
 			}
+		}
+
+		if (matched) {
+			continue;
 		}
 
 		std::string hint = "";
 		if (tokens.size() > 0) {
-			hint = " after " + tokens[tokens.size()-1]->value;
+			hint = " after " + std::string(tokens[tokens.size()-1]->value);
 		}
 
 		std::string err = "Unable to lex token" + hint + " at " + 
@@ -42,11 +51,11 @@ std::tuple<std::vector<token*>, std::string> lex(const std::string& source) {
 		return {tokens, err};
 	}
 	
-	return {tokens, nullptr};
+	return {tokens, ""};
 }
 
 namespace {
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string source, cursor ic) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string_view source, cursor ic) {
 		cursor cur = ic;	
 
 		bool periodFound = false;
@@ -124,10 +133,10 @@ namespace {
 
 	}
 
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexCharacterDelimited(const std::string& source, cursor ic, char delimiter) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexCharacterDelimited(std::string_view source, cursor ic, char delimiter) {
 		cursor cur = ic;
 
-		if (source.substr(cur.pointer, source.length()-1).length() == 0) {
+		if (source.substr(cur.pointer).empty()) {
 			return {nullptr, ic, false};
 		}
 
@@ -168,14 +177,14 @@ namespace {
 		return {nullptr, ic, false};
 	}
 
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexString(const std::string& source, cursor ic) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexString(std::string_view source, cursor ic) {
 		return lexCharacterDelimited(source, ic, '\'');
 	}
 
 	// longestMatch iterates through a source string, starting at the given
 	// cursor, to find the longest matching substring among the provided
 	// options
-	std::string longestMatch(std::string source, cursor ic, std::vector<std::string_view>& options) {
+	std::string longestMatch(std::string_view source, cursor ic, std::vector<std::string_view>& options) {
 		std::vector<char> value;
 		std::vector<int> skipList;
 		std::string match;
@@ -223,7 +232,7 @@ namespace {
 		return match;
 	}
 
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string source, cursor ic) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string_view source, cursor ic) {
 		char c = source[ic.pointer];
 		cursor cur = ic;
 
@@ -278,7 +287,7 @@ namespace {
 
 	}
 
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string source, cursor ic) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string_view source, cursor ic) {
 		cursor cur = ic;
 		std::vector<keyword> keywords = {
 			selectKeyword,
@@ -309,7 +318,7 @@ namespace {
 			std::make_unique<token>(token{
 				.value = match,
 				.loc = ic.loc,
-				.kind = tokenKind::symbolKind,
+				.kind = tokenKind::keywordKind,
 			}), 
 			cur, 
 			true			
@@ -317,7 +326,7 @@ namespace {
 
 	}
 
-	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string source, cursor ic) {
+	std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string_view source, cursor ic) {
 		// handle seperately if it is a double-quoted identifier
 		if (auto [tok, newCursor, ok] = lexCharacterDelimited(source, ic, '"'); ok) {
 			return {std::move(tok), newCursor, true};
