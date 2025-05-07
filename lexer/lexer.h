@@ -3,6 +3,8 @@
 #include <string_view>
 #include <tuple>
 #include <functional>
+#include <vector>
+#include <memory>
 
 namespace nicolassql {
 
@@ -58,5 +60,23 @@ struct cursor {
 };
 
 using lexer = std::function<std::tuple<std::unique_ptr<token>, cursor, bool>(std::string_view, const cursor&)>;
+
+std::tuple<std::vector<token*>, std::string>
+lex(std::string_view source);
+
+std::tuple<std::unique_ptr<token>, cursor, bool>
+lexNumeric(std::string_view source, cursor ic);
+
+std::tuple<std::unique_ptr<token>, cursor, bool>
+lexString(std::string_view source, cursor ic);
+
+std::tuple<std::unique_ptr<token>, cursor, bool>
+lexSymbol(std::string_view source, cursor ic);
+
+std::tuple<std::unique_ptr<token>, cursor, bool>
+lexKeyword(std::string_view source, cursor ic);
+
+std::tuple<std::unique_ptr<token>, cursor, bool>
+lexIdentifier(std::string_view source, cursor ic);
 
 }
