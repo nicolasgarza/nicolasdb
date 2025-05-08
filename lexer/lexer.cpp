@@ -119,7 +119,7 @@ std::tuple<std::unique_ptr<token>, cursor, bool> lexNumeric(std::string_view sou
 
 	return std::make_tuple(
 		std::make_unique<token>(token{
-			.value = source.substr(ic.pointer, cur.pointer - ic.pointer),
+			.value = std::string(source.substr(ic.pointer, cur.pointer - ic.pointer)),
 			.kind = tokenKind::numericKind,
 			.loc = ic.loc
 		}),
@@ -255,33 +255,9 @@ std::tuple<std::unique_ptr<token>, cursor, bool> lexSymbol(std::string_view sour
 		return {nullptr, ic, false};
 	}
 
-	// syntax that should be kept
-	std::vector<symbol> symbols = {
-		commaSymbol,
-		leftparenSymbol,
-		rightparenSymbol,
-		semicolonSymbol,
-		asteriskSymbol,
-	};
-
-	std::vector<std::string_view> options;
-	for (std::string_view s : symbols) {
-		options.push_back(s);
-	}
-
-	// use `ic` not `cur`
-	std::string match = longestMatch(source, ic, options);
-	// unknown character
-	if (match == "") {
-		return {nullptr, ic, false};
-	}
-
-	cur.pointer = ic.pointer + match.length();
-	cur.loc.col = ic.loc.col + match.length();
-
 	return std::make_tuple(
 		std::make_unique<token>(token{
-			.value = match,
+			.value = std::string(1, c),
 			.loc = ic.loc,
 			.kind = tokenKind::symbolKind,
 		}), 
@@ -299,35 +275,67 @@ std::tuple<std::unique_ptr<token>, cursor, bool> lexKeyword(std::string_view sou
 		valuesKeyword,
 		tableKeyword,
 		createKeyword,
-		whereKeyword,
 		fromKeyword,
 		intoKeyword,
 		textKeyword,
+		intKeyword,
+		asKeyword,
 	};
+	
+	std::vector<char> value;
+	std::vector<int> skipList;
+	std::string match;
 
-	std::vector<std::string_view> options;
-	for (std::string_view k : keywords) {
-		options.push_back(k);
+	while (cur.pointer < source.size()) {
+		char c = source[cur.pointer++];
+		cur.loc.col++;
+
+		value.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+		std::string prefix(value.begin(), value.end());
+
+		for (int i = 0; i < keywords.size(); ++i) {
+			if (std::find(skipList.begin(), skipList.end(), i) != skipList.end()) {
+				continue;
+			}	
+
+			const auto kw = keywords[i];
+			const auto len_kw = kw.size();
+			const auto len_val = prefix.size();
+
+			if (prefix == kw) {
+				skipList.push_back(i);
+				if (len_kw > match.size()) {
+					match = std::string(kw);
+				}
+				continue;
+			}
+
+			bool sharesPrefix = (len_val <= len_kw
+								&& prefix == std::string(kw.substr(0, len_val)));
+			bool tooLong = (len_val > len_kw);
+
+			if (tooLong || !sharesPrefix) {
+				skipList.push_back(i);
+			}
+		}
+
+		if (skipList.size() == keywords.size()) {
+			break;
+		}
 	}
-
-	std::string match = longestMatch(source, ic, options);
-	if (match == "") {
+	if (match.empty()) {
 		return {nullptr, ic, false};
 	}
 
-	cur.pointer = ic.pointer + match.length();
-	cur.loc.col = ic.loc.col + match.length();
+	cur.pointer = ic.pointer + match.size();
+	cur.loc.col = ic.loc.col + static_cast<uint64_t>(match.size());
 
-	return std::make_tuple(
-		std::make_unique<token>(token{
+	auto tok = std::make_unique<token>(token{
 			.value = match,
-			.loc = ic.loc,
 			.kind = tokenKind::keywordKind,
-		}), 
-		cur, 
-		true			
-	); 
-
+			.loc = ic.loc
+			});
+	return {std::move(tok), cur, true};
 }
 
 std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string_view source, cursor ic) {
@@ -366,14 +374,14 @@ std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string_view 
 		return {nullptr, ic, false};
 	}
 
+
+	std::string rawIdentifier(value.begin(), value.end());
+	std::transform(rawIdentifier.begin(), rawIdentifier.end(), rawIdentifier.begin(),
+               [](unsigned char c) { return std::tolower(c); });
+
 	return std::make_tuple(
 		std::make_unique<token>(token{
-			.value = [] (const std::string& value) {
-			std::string lower(value.size(), '\0');
-			std::transform(value.begin(), value.end(), lower.begin(),
-					[](unsigned char c) { return std::tolower(c); });
-			return lower;
-			}(std::string(value.begin(), value.end())),
+			.value = std::move(rawIdentifier),
 			.loc = ic.loc,
 			.kind = tokenKind::identifierKind,
 		}), 
@@ -381,6 +389,10 @@ std::tuple<std::unique_ptr<token>, cursor, bool> lexIdentifier(std::string_view 
 		true			
 	); 
 
+}
+
+std::tuple<std::unique_ptr<token>, cursor, bool> lexString(std::string source, cursor ic) {
+	return lexCharacterDelimited(source, ic, '\'');
 }
 
 }

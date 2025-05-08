@@ -45,7 +45,7 @@ enum class tokenKind : unsigned int {
 };
 
 struct token {
-	std::string_view value;
+	std::string value;
 	tokenKind kind;
 	location loc;
 
