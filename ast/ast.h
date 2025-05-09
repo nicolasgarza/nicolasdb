@@ -1,3 +1,4 @@
+#pragma once
 #include <vector>
 #include "../lexer/lexer.h"
 
@@ -30,13 +31,13 @@ struct CreateTableStatement {
 };
 
 struct SelectStatement {
-	std::vector<expression*> item;
+	std::vector<std::unique_ptr<expression>> item;
 	nicolassql::token from;
 };
 
 struct InsertStatement {
 	nicolassql::token table;
-	std::vector<expression*>* values;
+	std::vector<std::unique_ptr<expression>>* values;
 };
 
 struct Statement {
@@ -47,7 +48,7 @@ struct Statement {
 };
 
 struct Ast {
-	std::vector<Statement*> Statements;
+	std::vector<std::unique_ptr<Statement>> Statements;
 };
 
 }
