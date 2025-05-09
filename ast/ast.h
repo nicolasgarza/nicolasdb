@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <vector>
 #include "../lexer/lexer.h"
 
@@ -27,7 +28,7 @@ struct columnDefinition {
 
 struct CreateTableStatement {
 	nicolassql::token name;
-	std::vector<columnDefinition*>* cols;
+	std::unique_ptr<std::vector<std::unique_ptr<columnDefinition>>> cols;
 };
 
 struct SelectStatement {
@@ -37,7 +38,7 @@ struct SelectStatement {
 
 struct InsertStatement {
 	nicolassql::token table;
-	std::vector<std::unique_ptr<expression>>* values;
+	std::unique_ptr<std::vector<std::unique_ptr<expression>>> values;
 };
 
 struct Statement {
