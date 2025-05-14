@@ -1,4 +1,3 @@
-#pragma once
 #include "../lexer/lexer.h"
 #include "../ast/ast.h"
 #include <initializer_list>
@@ -53,7 +52,7 @@ token tokenFromSymbol(symbol s) {
 }
 
 bool expectToken(const std::vector<token*>& tokens, uint64_t cursor, const token& t) {
-	if (cursor > tokens.size()) {
+	if (cursor >= tokens.size()) {
 		return false;
 	}
 
@@ -77,17 +76,25 @@ std::tuple<std::unique_ptr<ast::Ast>, std::string> Parse(std::string source) {
 		return {nullptr, err};
 	}
 
+	if (!tokens.empty()) {
+		token semiTok = tokenFromSymbol(semicolonSymbol);
+		token* lastTok = tokens.back();
+		if (!semiTok.equals(*lastTok)) {
+			tokens.push_back(new token {semiTok});
+		}
+	}
+
 	ast::Ast a{};
 	uint64_t cursor = 0;
 	while (cursor < tokens.size()) {
 		auto [stmt, newCursor, ok] = parseStatement(tokens, cursor, tokenFromSymbol(semicolonSymbol));
-		if (ok) {
+		if (!ok) {
 			helpMessage(tokens, cursor, "Expected statement");
 			return {nullptr, "Failed to parse, expected statement"};
 		}
 		cursor = newCursor;
 
-		a.Statements.push_back(stmt);
+		a.Statements.push_back(std::move(stmt));
 
 		bool atLeastOneSemicolon = false;
 		while (expectToken(tokens, cursor, tokenFromSymbol(semicolonSymbol)) == true) {
@@ -447,7 +454,7 @@ std::tuple<std::unique_ptr<ast::CreateTableStatement>, uint64_t, bool> parseCrea
 	cursor++;
 
 	auto [cols, newCursor2, ok2] = parseColumnDefinitions(tokens, cursor, tokenFromSymbol(rightparenSymbol));
-	if (ok2) {
+	if (!ok2) {
 		return {nullptr, initialCursor, false};
 	}
 	cursor = newCursor2;

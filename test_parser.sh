@@ -1,4 +1,4 @@
 cd build &&
 cmake --build . &&
-ctest --verbose -R LexerTest &&
+ctest --verbose -R ParserTest
 cd ..
